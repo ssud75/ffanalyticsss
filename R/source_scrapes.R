@@ -910,40 +910,46 @@ scrape_fftoday <- function(pos = c("QB", "RB", "WR", "TE", "K", "DST", "DL", "LB
 }
 
 # Fantasypros ----
-scrape_fantasypros = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
+scrape_fantasypros_score = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
                               season = NULL, week = NULL, draft = TRUE, weekly = TRUE) {
   message("\nThe FantasyPros scrape uses a 2 second delay between pages")
-
+  
   if(is.null(season)) {
     season = get_scrape_year()
   }
   if(is.null(week)) {
     week = get_scrape_week()
   }
-
-
-
+  
+  if(season %in% 2002:2022) {
+    scrape_season = paste0(".php?season=", season)
+  } else {
+    scrape_season = ".php?season=2022"
+  }
+  
   if(week %in% 1:17) {
-    scrape_week = paste0(".php?week=", week)
+    scrape_week = paste0("&week=", week)
   } else {
     scrape_week = ".php?week=draft"
   }
-
-  base_link = paste0("https://www.fantasypros.com/nfl/projections")
+  
+  #https://www.fantasypros.com/nfl/stats/qb.php?year=2022&week=7&scoring=HALF&range=week
+ 
+   base_link = paste0("https://www.fantasypros.com/nfl/stats/")
   site_session = rvest::session(base_link)
-
+  
   l_pos = lapply(pos, function(pos) {
-    scrape_link = paste0("https://www.fantasypros.com/nfl/projections/",
-                         tolower(pos), scrape_week)
-
+    scrape_link = paste0("https://www.fantasypros.com/nfl/stats/",
+                         tolower(pos), scrape_season, scrape_week, "&scoring=HALF")
+    
     Sys.sleep(2L) # temporary, until I get an argument for honoring the crawl delay
     cat(paste0("Scraping ", pos, " projections from"), scrape_link, sep = "\n  ")
-
+    
     html_page = site_session %>%
       rvest::session_jump_to(scrape_link) %>%
       rvest::read_html()
-
-
+    
+    
     # Getting column names
     if(pos %in% c("K", "DST")) {
       col_names = html_page %>%
@@ -951,32 +957,32 @@ scrape_fantasypros = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
         rvest::html_text2() %>%
         strsplit("\\t") %>%
         base::`[[`(1)
-
+      
       col_names = rename_vec(col_names, fantasypros_columns)
-
+      
     } else {
       col_names = html_page %>%
         rvest::html_element("table > thead") %>%
         rvest::html_table()
-
+      
       col_names = trimws(paste(col_names[1, ], col_names[2, ]))
       col_names = rename_vec(col_names, fantasypros_columns)
     }
-
+    
     # Get PID
     fantasypro_num_id = html_page %>%
       rvest::html_elements("table > tbody > tr > td.player-label > a:nth-child(2)") %>%
       rvest::html_attr("class") %>%
       sub(".+\\-", "", .)
-
+    
     # Creating and cleaning table
     out_df = html_page %>%
       rvest::html_element("table > tbody") %>%
       rvest::html_table() %>%
       mutate(across(everything(), ~gsub(",", "", .x, fixed = TRUE)))
-
+    
     names(out_df) = col_names
-
+    
     # Adding a few columns
     if(pos == "DST") {
       out_df$src_id = fantasypro_num_id
@@ -991,91 +997,12 @@ scrape_fantasypros = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
                pos = pos,
                id = get_mfl_id(fantasypro_num_id, player_name = player, team = team, pos = pos))
     }
-
+    
     # Misc cleanup before done
     idx = names(out_df) %in% c("id", "src_id")
     out_df[!idx] = type.convert(out_df[!idx], as.is = TRUE)
     out_df[out_df$site_pts > 0,]
   })
-  names(l_pos) = pos
-  attr(l_pos, "season") = season
-  attr(l_pos, "week") = week
-  l_pos
-}
-
-# RTSports ----
-scrape_rtsports = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
-                           season = NULL, week = 0, draft = TRUE, weekly = FALSE) {
-
-  message("\nThe RTSports scrape uses a 5 second delay between pages")
-
-  if(is.null(season)) {
-    season = get_scrape_year()
-  }
-  if(is.null(week)) {
-    week = get_scrape_week()
-  }
-  if(week > 0) {
-    stop("RTS Sports projections are only available for week 0")
-  }
-
-  base_url = "https://www.freedraftguide.com/football/draft-guide-rankings-provider.php"
-
-  l_pos = lapply(pos, function(x) {
-    if(x != pos[1]) {
-      Sys.sleep(5)
-    }
-    req = httr2::request(base_url) %>%
-      httr2::req_url_query(POS = rts_pos_idx[x])
-
-    cat(paste0("Scraping ", x, " projections from"), req$url, sep = "\n  ")
-    rts_json = httr2::req_perform(req) %>%
-      httr2::resp_body_json()
-
-    p_info = rrapply::rrapply(
-      rts_json,
-      function(x, .xname, .xpos) {
-        .xname %in% c("player_id", "stats_id", "name", "nfl_team") & length(.xpos) == 3
-      },
-      how = "melt") %>%
-      tidyr::pivot_wider(names_from = L3, values_from = value) %>%
-      dplyr::select(player_id, stats_id, name, nfl_team)
-
-    p_data = rrapply::rrapply(
-      rts_json,
-      function(x, .xparents) "stats" %in% .xparents,
-      how = "melt"
-    ) %>%
-      tidyr::pivot_wider(names_from = L4, values_from = value) %>%
-      dplyr::select(-c(L1:L3)) %>%
-      Filter(f = function(x) any(x[1] != x, na.rm = TRUE))
-
-    if(x %in% c("RB", "WR", "TE") && "pass_yds" %in% names(p_data)) {
-      if(!"pass_atts" %in% names(p_data)) {
-        p_data[["pass_atts"]] = 0L
-      }
-    }
-
-    out_df = dplyr::bind_cols(p_info, p_data)
-
-    names(out_df) <- rename_vec(names(out_df), rts_columns)
-    if(x != "DST") {
-      out_df = out_df[out_df$site_pts > 0, ]
-    }
-
-    out_df = type.convert(out_df, as.is = TRUE)
-    out_df$pos = x
-    out_df$id = get_mfl_id(out_df$stats_id,
-                           player_name = out_df$player,
-                           team = out_df$team,
-                           pos = out_df$pos)
-    out_df$src_id = as.character(out_df$src_id)
-    out_df$stats_id = as.character(out_df$stats_id)
-    out_df$data_src = "RTSports"
-    dplyr::select(out_df, id, src_id, stats_id, pos, data_src, dplyr::everything())
-  })
-
-  # list elements named by position
   names(l_pos) = pos
   attr(l_pos, "season") = season
   attr(l_pos, "week") = week
