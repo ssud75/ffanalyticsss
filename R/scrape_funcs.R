@@ -20,12 +20,17 @@ scrape_data <- function(
           "FleaFlicker", "NumberFire", "FantasyFootballNerd", "NFL",
           "RTSports", "Walterfootball"),
   pos = c("QB", "RB", "WR", "TE", "K", "DST", "DL", "LB", "DB"),
-  season = NULL, week = NULL, ...){
+  season = NULL, week = NULL, ...),
+  scoring = c("HALF", "STANDARD", "PPR"))		
+{
 
   if(is.null(season)) {
     season = get_scrape_year()
   }
   if(is.null(week)) {
+    week = get_scrape_week()
+  }
+  if(is.null(scoring)) {
     week = get_scrape_week()
   }
 

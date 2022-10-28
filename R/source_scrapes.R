@@ -932,6 +932,12 @@ scrape_fantasypros_score = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
   } else {
     scrape_week = ".php?week=draft"
   }
+
+  if(scoring %in% c("HALF", "STANDARD", "PPR")) {
+    scrape_scoring = paste0("&scoring=", scoring)
+  } else {
+    scrape_scoring = "&scoring=HALF"
+  }
   
   #https://www.fantasypros.com/nfl/stats/qb.php?year=2022&week=7&scoring=HALF&range=week
  
@@ -940,7 +946,7 @@ scrape_fantasypros_score = function(pos = c("QB", "RB", "WR", "TE", "K", "DST"),
   
   l_pos = lapply(pos, function(pos) {
     scrape_link = paste0("https://www.fantasypros.com/nfl/stats/",
-                         tolower(pos), scrape_season, scrape_week, "&scoring=HALF")
+                         tolower(pos), scrape_season, scrape_week, scrape_scoring)
     
     Sys.sleep(2L) # temporary, until I get an argument for honoring the crawl delay
     cat(paste0("Scraping ", pos, " projections from"), scrape_link, sep = "\n  ")
